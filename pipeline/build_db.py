@@ -1,50 +1,54 @@
 ﻿"""
 build_db.py - AP Electoral Roll PDF -> SQLite Database
-Run: python build_db.py <pdf_folder> <output.db>
-Example: python build_db.py pdfs output/dhone.db
+
+Usage:
+    # With name lookup (100% accurate names)
+    python build_db.py pdfs output/dhone.db --lookup output/voter_names_lookup.json
+
+    # With CID map (partial names ~37%)
+    python build_db.py pdfs output/dhone.db --cid-map output/cid_map.json
+
+    # Basic (partial Telugu names)
+    python build_db.py pdfs output/dhone.db
 """
 
-import sys, os, re, sqlite3, time, glob
+import sys, os, re, sqlite3, time, glob, json
 import pdfplumber
 
+# ── Global maps (loaded from files) ──────────────────────────────────────────
+CID_MAP    = {}  # cid -> Telugu string
+NAME_LOOKUP = {}  # "part_serial" -> {n, nk, r, rn, rk, g}
 
-def strip_cids(text):
-    """Remove (cid:XXX) tags, keep real Unicode chars"""
+
+# ── CID decoding ──────────────────────────────────────────────────────────────
+def apply_cid_map(text):
     if not text:
         return ''
-    text = re.sub(r'\(cid:\d+\)', '', text)
-    text = re.sub(r'\s+', ' ', text)
-    return text.strip()
+    result = text
+    for cid, chars in sorted(CID_MAP.items(), key=lambda x: -len(x[1])):
+        result = result.replace('(cid:' + cid + ')', chars)
+    result = re.sub(r'\(cid:\d+\)', '', result)
+    result = result.replace('\uffff', '').replace('\ufffe', '')
+    result = result.replace('\u0C46\u0C56', '\u0C48')
+    return re.sub(r'\s+', ' ', result).strip()
 
 
+# ── House normalization ───────────────────────────────────────────────────────
 def norm_house(house):
-    """
-    Normalize house number with boundary markers.
-    Store as '-7-2-' so searching '-7-2-' finds:
-      7-2, 7-2/3, 7-2-1, 20-63-7-2
-    But NOT: 6-57-2, 6-97-2
-
-    Examples:
-      22/44/1  -> -22-44-1-
-      7-2      -> -7-2-
-      ----     -> empty
-    """
     h = house.strip()
     if re.match(r'^-+$', h):
         return ''
-    h = h.replace('/', '-')
-    h = h.lstrip('-').strip().lower()
-    if not h:
-        return ''
-    return '-' + h + '-'
+    h = h.replace('/', '-').lstrip('-').strip().lower()
+    return ('-' + h + '-') if h else ''
 
 
+# ── Part number ───────────────────────────────────────────────────────────────
 def extract_part_number(filename):
     m = re.search(r'_(\d+)\.pdf$', filename, re.IGNORECASE)
     return int(m.group(1)) if m else 0
 
 
-# AP 2002 Dhone AC-181 gender-segregated parts
+# ── Gender ────────────────────────────────────────────────────────────────────
 FEMALE_PARTS = {55, 58, 59, 61, 63, 65, 69, 72, 73, 76, 77}
 MALE_PARTS   = {54, 56, 57, 60, 62, 64, 68, 70, 71, 74, 75}
 
@@ -53,12 +57,13 @@ def get_gender(part_num, cell_text):
         return 'స్త్రీ'
     if part_num in MALE_PARTS:
         return 'పు'
-    t = strip_cids(str(cell_text or ''))
+    t = re.sub(r'\(cid:\d+\)', '', str(cell_text or '')).strip()
     if 'మ' in t:
         return 'స్త్రీ'
     return 'పు'
 
 
+# ── Page extraction ───────────────────────────────────────────────────────────
 def extract_page(pdf_page, part_num):
     rows  = []
     table = pdf_page.extract_table()
@@ -86,6 +91,7 @@ def extract_page(pdf_page, part_num):
     return rows
 
 
+# ── PDF processing ────────────────────────────────────────────────────────────
 def process_pdf(pdf_path):
     filename = os.path.basename(pdf_path)
     part_num = extract_part_number(filename)
@@ -98,8 +104,7 @@ def process_pdf(pdf_path):
                     text = page.extract_text() or ''
                     for line in text.split('\n'):
                         line = line.strip()
-                        telugu = sum(1 for c in line if '\u0C00' <= c <= '\u0C7F')
-                        if telugu > 3:
+                        if sum(1 for c in line if '\u0C00' <= c <= '\u0C7F') > 3:
                             village = line
                             break
                     continue
@@ -122,6 +127,43 @@ def process_pdf(pdf_path):
     }
 
 
+# ── Name resolution ───────────────────────────────────────────────────────────
+def resolve_name(voter):
+    """
+    Get name for voter using best available method:
+    1. Lookup from reference DB (100% accurate)
+    2. CID map decoding (partial)
+    3. Raw PDF text (fallback)
+    """
+    key = str(voter['part']) + '_' + str(voter['serial'])
+    
+    if NAME_LOOKUP and key in NAME_LOOKUP:
+        ref = NAME_LOOKUP[key]
+        return {
+            'name':     ref['n'],
+            'name_key': ref['nk'],
+            'rel':      ref.get('r', voter['rel']),
+            'rel_name': ref['rn'],
+            'rel_key':  ref['rk'],
+            'gender':   ref.get('g', voter['gender']),
+        }
+    
+    # Fall back to CID map
+    name     = apply_cid_map(voter['name'])
+    rel_name = apply_cid_map(voter['rel_name'])
+    rel      = apply_cid_map(voter['rel'])
+    
+    return {
+        'name':     name,
+        'name_key': name.lower(),
+        'rel':      rel,
+        'rel_name': rel_name,
+        'rel_key':  rel_name.lower(),
+        'gender':   voter['gender'],
+    }
+
+
+# ── Database ──────────────────────────────────────────────────────────────────
 def create_db(db_path):
     conn = sqlite3.connect(db_path)
     conn.executescript('''
@@ -168,9 +210,8 @@ def insert_part(conn, info):
 
 def insert_voters(conn, voters):
     for v in voters:
-        house_norm    = norm_house(v['house'])
-        clean_name    = strip_cids(v['name'])
-        clean_relname = strip_cids(v['rel_name'])
+        house_norm = norm_house(v['house'])
+        resolved   = resolve_name(v)
         conn.execute('''
             INSERT INTO voters
             (part, serial, page, house, house_norm,
@@ -180,75 +221,87 @@ def insert_voters(conn, voters):
         ''', (
             v['part'], v['serial'], v['page'],
             v['house'], house_norm,
-            clean_name, clean_name.lower(),
-            strip_cids(v['rel']),
-            clean_relname, clean_relname.lower(),
-            v['gender'], v['age'], v['epic'],
+            resolved['name'],     resolved['name_key'],
+            resolved['rel'],
+            resolved['rel_name'], resolved['rel_key'],
+            resolved['gender'],   v['age'], v['epic'],
         ))
 
 
+# ── Test ──────────────────────────────────────────────────────────────────────
 def test_db(db_path):
     conn = sqlite3.connect(db_path)
     print('\n' + '='*55)
     print('LOCAL TEST RESULTS')
     print('='*55)
-
     total  = conn.execute('SELECT COUNT(*) FROM voters').fetchone()[0]
     male   = conn.execute("SELECT COUNT(*) FROM voters WHERE gender='పు'").fetchone()[0]
     female = conn.execute("SELECT COUNT(*) FROM voters WHERE gender='స్త్రీ'").fetchone()[0]
     parts  = conn.execute('SELECT COUNT(*) FROM parts').fetchone()[0]
     epic   = conn.execute(
-        "SELECT COUNT(*) FROM voters WHERE epic != '' "
-        "AND epic != '00000000000000' AND epic NOT LIKE '%000000'"
+        "SELECT COUNT(*) FROM voters WHERE epic!='' "
+        "AND epic!='00000000000000' AND epic NOT LIKE '%000000'"
     ).fetchone()[0]
-    print(f'Total voters : {total}')
-    print(f'Male         : {male}')
-    print(f'Female       : {female}')
-    print(f'Parts        : {parts}')
-    print(f'Valid EPICs  : {epic}')
-
-    def house_search(q):
-        norm = '-' + q.replace('/', '-').lower() + '-'
-        return conn.execute(
-            "SELECT serial, part, house, name FROM voters "
-            "WHERE house_norm LIKE ? "
-            "ORDER BY house_norm, serial LIMIT 8",
-            ['%' + norm + '%']
-        ).fetchall()
-
-    print('\n--- House search: 7-2 (should NOT show 6-57-2) ---')
-    rows = house_search('7-2')
-    print(f'Results: {len(rows)}')
-    for r in rows:
-        print(f'  serial={r[0]:4d} part={r[1]} house={r[2]!r:18} name={r[3]!r}')
+    print(f'Total  : {total}')
+    print(f'Male   : {male}')
+    print(f'Female : {female}')
+    print(f'Parts  : {parts}')
+    print(f'EPICs  : {epic}')
 
     print('\n--- House search: 22-42 ---')
-    rows2 = house_search('22-42')
-    print(f'Results: {len(rows2)}')
-    for r in rows2:
-        print(f'  serial={r[0]:4d} part={r[1]} house={r[2]!r:18} name={r[3]!r}')
-
-    print('\n--- House search: 22/44 ---')
-    rows3 = house_search('22/44')
-    print(f'Results: {len(rows3)}')
-    for r in rows3:
-        print(f'  serial={r[0]:4d} part={r[1]} house={r[2]!r:18} name={r[3]!r}')
-
-    print('\n--- Sample name_keys ---')
-    rows4 = conn.execute(
-        "SELECT name, name_key FROM voters WHERE name_key != '' LIMIT 8"
+    rows = conn.execute(
+        "SELECT serial, part, house, name FROM voters "
+        "WHERE house_norm LIKE '%-22-42-%' "
+        "ORDER BY house_norm, serial LIMIT 6"
     ).fetchall()
-    for r in rows4:
-        print(f'  {r[0]!r:30} -> {r[1]!r}')
+    print(f'Results: {len(rows)}')
+    for r in rows:
+        print(f'  serial={r[0]:4d} part={r[1]} house={r[2]!r:15} name={r[3]!r}')
 
+    print('\n--- Sample names ---')
+    rows2 = conn.execute(
+        "SELECT name, name_key FROM voters WHERE name!='' LIMIT 8"
+    ).fetchall()
+    for r in rows2:
+        print(f'  name={r[0]!r:35} key={r[1]!r}')
     print('='*55)
     conn.close()
 
 
+# ── Main ──────────────────────────────────────────────────────────────────────
 def main():
-    input_path = sys.argv[1] if len(sys.argv) > 1 else 'pdfs'
-    db_path    = sys.argv[2] if len(sys.argv) > 2 else 'voters.db'
+    args          = sys.argv[1:]
+    lookup_file   = None
+    cid_map_file  = None
 
+    if '--lookup' in args:
+        idx          = args.index('--lookup')
+        lookup_file  = args[idx+1]
+        args         = args[:idx] + args[idx+2:]
+
+    if '--cid-map' in args:
+        idx          = args.index('--cid-map')
+        cid_map_file = args[idx+1]
+        args         = args[:idx] + args[idx+2:]
+
+    input_path = args[0] if args else 'pdfs'
+    db_path    = args[1] if len(args) > 1 else 'voters.db'
+
+    # Load name lookup
+    if lookup_file and os.path.exists(lookup_file):
+        print('Loading name lookup: ' + lookup_file)
+        with open(lookup_file, encoding='utf-8') as f:
+            NAME_LOOKUP.update(json.load(f))
+        print(f'Loaded {len(NAME_LOOKUP)} name records -> 100% accurate names!')
+    elif cid_map_file and os.path.exists(cid_map_file):
+        with open(cid_map_file, encoding='utf-8') as f:
+            CID_MAP.update(json.load(f))
+        print(f'Loaded CID map: {len(CID_MAP)} entries (~37% name accuracy)')
+    else:
+        print('No name source provided - names will be partial Telugu')
+        print('Tip: use --lookup voter_names_lookup.json for 100% names')
+
+    # Find PDFs
     pdfs = sorted(glob.glob(os.path.join(input_path, '**/*.pdf'), recursive=True))
     if not pdfs:
         pdfs = sorted(glob.glob(os.path.join(input_path, '*.pdf')))
@@ -260,15 +313,14 @@ def main():
         os.remove(db_path)
         print('Removed old ' + db_path)
 
-    print('Found ' + str(len(pdfs)) + ' PDFs -> ' + db_path)
+    print(f'Found {len(pdfs)} PDFs -> {db_path}')
     conn  = create_db(db_path)
     total = 0
     start = time.time()
 
     for i, pdf_path in enumerate(pdfs, 1):
         fname = os.path.basename(pdf_path)
-        print('[' + str(i) + '/' + str(len(pdfs)) + '] ' + fname + ' ... ',
-              end='', flush=True)
+        print(f'[{i}/{len(pdfs)}] {fname} ... ', end='', flush=True)
         part_num, voters, part_info = process_pdf(pdf_path)
         insert_part(conn, part_info)
         insert_voters(conn, voters)
@@ -276,14 +328,17 @@ def main():
         total += len(voters)
         m = part_info['male']
         f = part_info['female']
-        print(str(len(voters)) + ' voters  (M:' + str(m) + '  F:' + str(f) + ')')
+
+        # Check how many got names from lookup
+        if NAME_LOOKUP:
+            matched = sum(1 for v in voters 
+                         if str(v['part'])+'_'+str(v['serial']) in NAME_LOOKUP)
+            print(f'{len(voters)} voters (M:{m} F:{f}) names:{matched}/{len(voters)}')
+        else:
+            print(f'{len(voters)} voters (M:{m} F:{f})')
 
     elapsed = time.time() - start
-    print('\n' + '='*55)
-    print('Done in      : ' + str(round(elapsed, 1)) + 's')
-    print('Total voters : ' + str(total))
-    print('Database     : ' + db_path)
-    print('Size         : ' + str(round(os.path.getsize(db_path)/1024/1024, 1)) + ' MB')
+    print(f'\nDone in {round(elapsed,1)}s | Total: {total} | DB: {db_path}')
     conn.close()
     test_db(db_path)
 

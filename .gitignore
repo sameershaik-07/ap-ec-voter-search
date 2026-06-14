@@ -1,36 +1,29 @@
-﻿# Database files (too large for git)
-*.db
-*.sqlite
-
-# APK outputs
-*.apk
-*.aab
-
-# Python
+﻿# Python
 __pycache__/
-*.py[cod]
-*.egg-info/
-.env
-venv/
-env/
+*.pyc
+*.pyo
 
-# Flutter
+# Database files (too large for git)
+*.db
+output/*.db
+flutter_app/assets/voters.db
+
+# Reference files (from APK - not our code)
+reference.db
+reference.zip
+voter_names_lookup.json
+pipeline/voter_names_lookup.json
+ref_extract/
+
+# Output APKs
+output/*.apk
+
+# Flutter build
+flutter_app/build/
 flutter_app/.dart_tool/
 flutter_app/.flutter-plugins
 flutter_app/.flutter-plugins-dependencies
-flutter_app/build/
-flutter_app/.packages
-flutter_app/pubspec.lock
 
-# Output folder
-output/
-
-# PDFs (source files, too large)
-pdfs/
-
-# Windows
-Thumbs.db
-desktop.ini
-
-# VS Code
-.vscode/
+# Android
+flutter_app/android/.gradle/
+flutter_app/android/local.properties

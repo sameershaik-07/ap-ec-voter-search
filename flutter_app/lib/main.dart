@@ -276,7 +276,7 @@ class DisclaimerScreen extends StatelessWidget {
               ]),
               const SizedBox(height: 16),
               _point('This app helps you search the $kYear SIR voter list for $kConstName AC-$kAcNumber.'),
-              _point('Voter names are shown in English phonetic format for easy searching.'),
+              _point('Voter names are shown in Telugu. Search works in both Telugu and English phonetic.'),
               _point('For official purposes only the original ECI / CEO Andhra Pradesh list is authoritative.'),
               _point('Verify any record using Part, Page and Serial number shown on each card.'),
               _point('For latest voter information visit voters.eci.gov.in'),
@@ -421,7 +421,7 @@ class _HomePageState extends State<HomePage> {
         onSubmitted: _search,
         onChanged:   (v) => setState(() {}),
         decoration: InputDecoration(
-          hintText: _mode == 0 ? 'Type name e.g. raju, reddy, venkat...'
+          hintText: _mode == 0 ? 'Type name in Telugu or English e.g. రెడ్డి, raju...'
               : _mode == 1    ? 'House number e.g. 7-2/3 or 22-42'
               :                 'EPIC number e.g. AP261810...',
           prefixIcon: const Icon(Icons.search, color: kPrimary),
@@ -559,8 +559,7 @@ class _HomePageState extends State<HomePage> {
           Icon(Icons.info_outline, size: 16, color: Colors.blue[700]),
           const SizedBox(width: 8),
           Expanded(child: Text(
-            'Names are in English phonetic format. '
-            'Search "raju" to find Raju, "reddy" to find all Reddys.',
+            'Names are in Telugu. Search by Telugu name or English phonetic e.g. "raju" finds రాజు.',
             style: TextStyle(fontSize: 12, color: Colors.blue[800]))),
         ]),
       ),
@@ -704,8 +703,16 @@ class _VoterCard extends StatelessWidget {
 
   bool   get _isMale  => (data['gender'] as String? ?? '') != 'స్త్రీ';
   bool   get _hasEpic => isValidEpic(data['epic'] as String? ?? '');
-  String get _name    => capitalize(data['name_key'] as String? ?? '');
-  String get _relName => capitalize(data['rel_key']  as String? ?? '');
+  String get _name {
+    final telugu = (data['name'] as String? ?? '').trim();
+    if (telugu.isNotEmpty) return telugu;
+    return capitalize(data['name_key'] as String? ?? '');
+  }
+  String get _relName {
+    final telugu = (data['rel_name'] as String? ?? '').trim();
+    if (telugu.isNotEmpty) return telugu;
+    return capitalize(data['rel_key'] as String? ?? '');
+  }
   String get _rel     => relLabel(data['rel'] as String? ?? '');
   String get _house {
     final h = (data['house'] as String? ?? '').trim();
