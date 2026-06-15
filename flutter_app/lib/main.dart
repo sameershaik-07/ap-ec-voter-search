@@ -33,23 +33,27 @@ String capitalize(String s) {
       .map((w) => w[0].toUpperCase() + w.substring(1)).join(' ');
 }
 
-String relFull(String rel) {
+String relLabel(String rel) {
   switch (rel.trim()) {
     case 'తం':    return 'తండ్రి';
     case 'భ':     return 'భర్త';
     case 'భా':    return 'భార్య';
     case 'తల్లి': return 'తల్లి';
-    default:      return rel.trim();
+    case 'Z':     return 'తండ్రి';
+    case 'R3':    return 'భర్త';
+    default:      return 'తండ్రి';
   }
 }
 
-String relEn(String rel) {
+String relLabelEn(String rel) {
   switch (rel.trim()) {
     case 'తం':    return 'Father';
     case 'భ':     return 'Husband';
     case 'భా':    return 'Wife';
     case 'తల్లి': return 'Mother';
-    default:      return rel.trim();
+    case 'Z':     return 'Father';
+    case 'R3':    return 'Husband';
+    default:      return 'Father';
   }
 }
 
@@ -158,12 +162,12 @@ class VoterDB {
 
   static Future<Map<String, dynamic>> getStats() async {
     final d  = await db;
-    final tv = Sqflite.firstIntValue(await d.rawQuery('SELECT COUNT(*) FROM voters')) ?? 0;
-    final m  = Sqflite.firstIntValue(await d.rawQuery("SELECT COUNT(*) FROM voters WHERE gender='పు'")) ?? 0;
-    final pt = Sqflite.firstIntValue(await d.rawQuery('SELECT COUNT(*) FROM parts')) ?? 0;
-    final ep = Sqflite.firstIntValue(await d.rawQuery(
-      "SELECT COUNT(*) FROM voters WHERE epic!='' AND epic!='00000000000000' AND epic NOT LIKE '%000000'")) ?? 0;
-    final vl = Sqflite.firstIntValue(await d.rawQuery('SELECT COUNT(DISTINCT village) FROM parts')) ?? 0;
+    final tv = (await d.rawQuery('SELECT COUNT(*) c FROM voters'))[0]['c'] as int? ?? 0;
+    final m  = (await d.rawQuery("SELECT COUNT(*) c FROM voters WHERE gender='పు'"))[0]['c'] as int? ?? 0;
+    final pt = (await d.rawQuery('SELECT COUNT(*) c FROM parts'))[0]['c'] as int? ?? 0;
+    final ep = (await d.rawQuery(
+      "SELECT COUNT(*) c FROM voters WHERE epic!='' AND epic!='00000000000000' AND epic NOT LIKE '%000000'"))[0]['c'] as int? ?? 0;
+    final vl = (await d.rawQuery('SELECT COUNT(DISTINCT village) c FROM parts'))[0]['c'] as int? ?? 0;
     return {'total': tv, 'male': m, 'female': tv - m, 'parts': pt, 'epic': ep, 'villages': vl};
   }
 }
@@ -207,10 +211,12 @@ class _SplashState extends State<SplashScreen> with SingleTickerProviderStateMix
   }
   Future<void> _go() async {
     if (!mounted) return;
-    final p = await SharedPreferences.getInstance();
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    final accepted = prefs.getBool('ok') ?? false;
     if (!mounted) return;
     Navigator.pushReplacement(context, MaterialPageRoute(
-      builder: (_) => p.getBool('ok') == true ? const HomePage() : const DisclaimerPage()));
+      builder: (_) => accepted ? const HomePage() : const DisclaimerPage()));
   }
   @override void dispose() { _c.dispose(); super.dispose(); }
   @override
@@ -222,15 +228,15 @@ class _SplashState extends State<SplashScreen> with SingleTickerProviderStateMix
         decoration: BoxDecoration(color: kGold, borderRadius: BorderRadius.circular(18)),
         child: const Icon(Icons.how_to_vote_rounded, color: Colors.white, size: 38)),
       const SizedBox(height: 4),
-      Container(width: 72, height: 2, color: kGold.withOpacity(0.4)),
+      Container(width: 72, height: 2, color: kGold),
       const SizedBox(height: 20),
       Text(kAppName, style: const TextStyle(
         fontSize: 24, fontWeight: FontWeight.w500, color: Colors.white)),
       const SizedBox(height: 6),
-      Text('AC-$kAcNumber · $kYear', style: const TextStyle(
+      Text('AC-$kAcNumber | $kYear', style: const TextStyle(
         fontSize: 12, color: Colors.white38)),
       const SizedBox(height: 48),
-      SizedBox(width: 24, height: 24,
+      const SizedBox(width: 24, height: 24,
         child: CircularProgressIndicator(color: kGold, strokeWidth: 2)),
     ]))),
   );
@@ -254,7 +260,7 @@ class DisclaimerPage extends StatelessWidget {
           Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(kAppName, style: const TextStyle(
               fontSize: 18, fontWeight: FontWeight.w500, color: kNavy)),
-            Text('AC-$kAcNumber · SIR $kYear',
+            Text('AC-$kAcNumber | SIR $kYear',
               style: TextStyle(fontSize: 12, color: Colors.grey[600])),
           ]),
         ]),
@@ -267,18 +273,20 @@ class DisclaimerPage extends StatelessWidget {
           child: SingleChildScrollView(child: Column(
             crossAxisAlignment: CrossAxisAlignment.start, children: [
             Row(children: [
-              Icon(Icons.info_outline_rounded, color: kGold, size: 20),
+              const Icon(Icons.info_outline_rounded, color: kGold, size: 20),
               const SizedBox(width: 8),
               const Text('Important / ముఖ్యమైన సమాచారం',
                 style: TextStyle(fontWeight: FontWeight.w500, fontSize: 14)),
             ]),
             const SizedBox(height: 14),
-            _pt('This app shows the $kYear SIR voter list for $kConstName AC-$kAcNumber.'),
-            _pt('ఈ యాప్ $kYear SIR ఓటర్ల జాబితాను చూపిస్తుంది.'),
-            _pt('For official purposes verify with the original ECI electoral roll.'),
-            _pt('అధికారిక ప్రయోజనాల కోసం ECI ముద్రించిన అసలు జాబితాను ధృవీకరించండి.'),
-          ]))),
-        ),
+            _pt('ఈ యాప్ $kYear SIR ఓటర్ల జాబితాను చూపిస్తుంది — $kConstName AC-$kAcNumber.'),
+            _pt('This app displays the $kYear Special Intensive Revision (SIR) voter list for $kConstName AC-$kAcNumber.'),
+            _pt('ముఖ్యమైన హెచ్చరిక: ఈ యాప్‌లో చూపించే సమాచారాన్ని తప్పనిసరిగా అసలు భారత ఎన్నికల సంఘం (ECI) జాబితాతో సరిపోల్చి ధృవీకరించుకోండి.'),
+            _pt('Important: Always cross-verify this information with the official Election Commission of India (ECI) electoral roll before use.'),
+            _pt('ఈ యాప్ కేవలం సహాయం కోసం మాత్రమే. వ్యక్తిగత సమాచార లోపాలకు యాప్ డెవలపర్లు బాధ్యులు కారు.'),
+            _pt('This app is for reference purposes only. The developers are not accountable for any individual data discrepancies or errors.'),
+            _pt('అధికారిక సమాచారం కోసం: voters.eci.gov.in'),
+          ])))),
         const SizedBox(height: 16),
         SizedBox(width: double.infinity, height: 50,
           child: FilledButton.icon(
@@ -288,8 +296,10 @@ class DisclaimerPage extends StatelessWidget {
             label: const Text('I Understand / అర్థమైంది',
               style: TextStyle(fontSize: 15, fontWeight: FontWeight.w500)),
             onPressed: () async {
-              await (await SharedPreferences.getInstance()).setBool('ok', true);
-              if (context.mounted) Navigator.pushReplacement(context,
+              final prefs = await SharedPreferences.getInstance();
+              await prefs.setBool('ok', true);
+              if (!context.mounted) return;
+              Navigator.pushReplacement(context,
                 MaterialPageRoute(builder: (_) => const HomePage()));
             })),
       ]),
@@ -298,7 +308,7 @@ class DisclaimerPage extends StatelessWidget {
   Widget _pt(String t) => Padding(
     padding: const EdgeInsets.only(bottom: 10),
     child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Icon(Icons.circle, size: 5, color: kGold),
+      const Icon(Icons.circle, size: 5, color: kGold),
       const SizedBox(width: 8),
       Expanded(child: Text(t, style: const TextStyle(fontSize: 13, height: 1.5))),
     ]));
@@ -325,9 +335,9 @@ class _HomeState extends State<HomePage> {
 
   @override void initState() {
     super.initState();
-    VoterDB.getStats().then((s) => setState(() => _stats = s));
-    VoterDB.getVillages().then((v) => setState(() => _villages = v));
-    VoterDB.getParts().then((p) => setState(() => _allParts = p));
+    VoterDB.getStats().then((s) { if (mounted) setState(() => _stats = s); });
+    VoterDB.getVillages().then((v) { if (mounted) setState(() => _villages = v); });
+    VoterDB.getParts().then((p) { if (mounted) setState(() => _allParts = p); });
   }
   @override void dispose() {
     _debounce?.cancel(); _ctrl.dispose(); _focus.dispose(); super.dispose();
@@ -373,7 +383,7 @@ class _HomeState extends State<HomePage> {
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(kAppName, style: const TextStyle(
               fontSize: 17, fontWeight: FontWeight.w500, color: Colors.white)),
-            Text('శాసనసభ నియోజకవర్గం $kAcNumber · ఓటర్ల జాబితా $kYear',
+            Text('శాసనసభ నియోజకవర్గం $kAcNumber | ఓటర్ల జాబితా $kYear',
               style: const TextStyle(fontSize: 10, color: Colors.white38)),
           ])),
           GestureDetector(
@@ -385,7 +395,7 @@ class _HomeState extends State<HomePage> {
               child: const Icon(Icons.info_outline, color: Colors.white54, size: 16))),
         ]),
       ),
-      Container(height: 0.5, color: kGold.withOpacity(0.3)),
+      Container(height: 0.5, color: kGold),
       const SizedBox(height: 10),
       Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -421,8 +431,7 @@ class _HomeState extends State<HomePage> {
         padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
         child: Row(children: [
           Expanded(child: _dropBtn(
-            label: _village ?? 'అన్ని గ్రామాలు',
-            onTap: _showVillages)),
+            label: _village ?? 'అన్ని గ్రామాలు', onTap: _showVillages)),
           const SizedBox(width: 10),
           Expanded(child: _dropBtn(
             label: _parts.isEmpty ? 'అన్ని భాగాలు' : '${_parts.length} భాగాలు',
@@ -436,7 +445,7 @@ class _HomeState extends State<HomePage> {
             _searched
               ? '${_results.length}${_results.length == 300 ? '+' : ''} ఫలితాలు'
               : _stats.isNotEmpty
-                ? '${_stats['total']} ఓటర్లు · ${_stats['villages']} గ్రామాలు'
+                ? '${_stats['total']} ఓటర్లు | ${_stats['villages']} గ్రామాలు'
                 : '',
             style: const TextStyle(fontSize: 11, color: Colors.white54)),
           if (_searched && !_searching)
@@ -492,10 +501,10 @@ class _HomeState extends State<HomePage> {
           _tip(Icons.person_search_outlined, kBlue, 'పేరుతో వెతకండి',
             'తెలుగు లేదా ఇంగ్లీష్ లో పేరు టైప్ చేయండి'),
           _div(),
-          _tip(Icons.home_outlined, kGold, 'ఇల్లు నంబర్‌తో వెతకండి',
+          _tip(Icons.home_outlined, kGold, 'ఇల్లు నంబర్తో వెతకండి',
             'ఉదా: 7-2/3 లేదా 1-42 అని టైప్ చేయండి'),
           _div(),
-          _tip(Icons.badge_outlined, kGreen, 'EPIC నంబర్‌తో వెతకండి',
+          _tip(Icons.badge_outlined, kGreen, 'EPIC నంబర్తో వెతకండి',
             'EPIC నంబర్ AP261810... అని టైప్ చేయండి'),
           _div(),
           _tip(Icons.people_outlined, kMale, 'తండ్రి / భర్త పేరుతో కూడా వెతకవచ్చు',
@@ -569,19 +578,13 @@ class _HomeState extends State<HomePage> {
       itemCount: _results.length,
       itemBuilder: (ctx, i) => _VoterCard(
         data: _results[i],
-        onTap: () => _showDetail(_results[i]),
-      ),
-    );
+        onTap: () => _showDetail(_results[i])));
   }
 
-  void _showDetail(Map<String, dynamic> data) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _DetailSheet(data: data),
-    );
-  }
+  void _showDetail(Map<String, dynamic> data) => showModalBottomSheet(
+    context: context, isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (_) => _DetailSheet(data: data));
 
   void _showVillages() => showModalBottomSheet(
     context: context, backgroundColor: Colors.white, isScrollControlled: true,
@@ -612,6 +615,7 @@ class _HomeState extends State<HomePage> {
                 ? const Icon(Icons.check, color: kBlue, size: 18) : null,
               onTap: () async {
                 final pts = await VoterDB.getParts(village: v);
+                if (!context.mounted) return;
                 setState(() {
                   _village = v;
                   _parts = pts.map((p) => p['part'] as int).toSet();
@@ -638,9 +642,9 @@ class _HomeState extends State<HomePage> {
 
   void _showInfo() => showDialog(context: context, builder: (_) => AlertDialog(
     title: Text(kAppName),
-    content: Text('$kConstName నియోజకవర్గం AC-$kAcNumber\nSIR $kYear ఓటర్ల జాబితా\n\nTotal: ${_stats['total']} voters | Parts: ${_stats['parts']}'),
+    content: Text('$kConstName నియోజకవర్గం AC-$kAcNumber\nSIR $kYear ఓటర్ల జాబితా\n\nమొత్తం: ${_stats['total']} ఓటర్లు | భాగాలు: ${_stats['parts']}'),
     actions: [TextButton(onPressed: () => Navigator.pop(context),
-      child: const Text('OK'))],
+      child: const Text('సరే'))],
   ));
 
   Widget _sheetHandle() => Container(
@@ -664,7 +668,7 @@ class _VoterCard extends StatelessWidget {
     final t = (data['rel_name'] as String? ?? '').trim();
     return t.isNotEmpty ? t : capitalize(data['rel_key'] as String? ?? '');
   }
-  String get _rel     => data['rel'] as String? ?? '';
+  String get _rel     => (data['rel'] as String? ?? '').trim();
   String get _house {
     final h = (data['house'] as String? ?? '').trim();
     return (h == '----' || h.isEmpty) ? '-' : h;
@@ -690,7 +694,7 @@ class _VoterCard extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.all(12),
           child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            // Left badge
+            // Left badge - serial, part, page
             Column(children: [
               Container(width: 52, height: 52,
                 decoration: BoxDecoration(
@@ -703,16 +707,15 @@ class _VoterCard extends StatelessWidget {
                     fontSize: 9, color: Colors.grey[500])),
                 ])),
               const SizedBox(height: 2),
+              // FIX: Show పే. (Telugu) with correct page number
               Text('పే.$_page', style: TextStyle(fontSize: 9, color: Colors.grey[400])),
             ]),
             const SizedBox(width: 12),
-            // Main content
             Expanded(child: Column(
               crossAxisAlignment: CrossAxisAlignment.start, children: [
               Row(children: [
                 Expanded(child: Text(_name.isEmpty ? '-' : _name,
                   style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500))),
-                // Gender pill
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                   decoration: BoxDecoration(
@@ -722,20 +725,19 @@ class _VoterCard extends StatelessWidget {
                   child: Text(_male ? 'పు' : 'స్త్రీ',
                     style: TextStyle(fontSize: 10, color: gc, fontWeight: FontWeight.w500))),
               ]),
+              // FIX: Show relation label properly in Telugu
               if (_relName.isNotEmpty) ...[
                 const SizedBox(height: 2),
-                Text('${relFull(_rel)}. $_relName',
+                Text('${relLabel(_rel)}: $_relName',
                   style: TextStyle(fontSize: 11, color: Colors.grey[600])),
               ],
               const SizedBox(height: 5),
-              // Tags row
               Wrap(spacing: 6, runSpacing: 4, children: [
                 _tag(Icons.home_outlined, _house),
                 if (_village.isNotEmpty) _tag(Icons.location_on_outlined, _village),
                 _tag(Icons.cake_outlined, 'వయసు $_age'),
               ]),
               const SizedBox(height: 5),
-              // EPIC
               if (_epic.isNotEmpty && _epic != '00000000000000')
                 Row(children: [
                   Container(width: 16, height: 16,
@@ -750,15 +752,14 @@ class _VoterCard extends StatelessWidget {
                     fontWeight: FontWeight.w500,
                     fontFamily: 'monospace')),
                 ])
-              else if (_epic == '00000000000000' || _epic.isEmpty)
+              else
                 Text('EPIC: జారీ కాలేదు (2002)',
                   style: TextStyle(fontSize: 10, color: Colors.grey[400])),
             ])),
-            // Share icon
             GestureDetector(
-              onTap: () => _shareVoter(),
+              onTap: _share,
               child: Padding(padding: const EdgeInsets.only(left: 4),
-                child: Icon(Icons.send_rounded, size: 18, color: kGreen))),
+                child: const Icon(Icons.send_rounded, size: 18, color: kGreen))),
           ]),
         ),
       ),
@@ -775,28 +776,26 @@ class _VoterCard extends StatelessWidget {
       Text(text, style: TextStyle(fontSize: 10, color: Colors.grey[700])),
     ]));
 
-  void _shareVoter() {
-    final rel  = _relName.isNotEmpty ? '${relEn(_rel)}: $_relName\n' : '';
-    final epic = _hasEpic ? 'EPIC   : $_epic\n' : '';
+  void _share() {
+    final rel  = _relName.isNotEmpty ? '${relLabelEn(_rel)}: $_relName\n' : '';
+    final epic = _hasEpic ? 'EPIC: $_epic\n' : '';
     Share.share(
-      '$kConstName Voter List (SIR $kYear)\n'
-      '━━━━━━━━━━━━━━━━━━━━━━\n'
-      'Name   : $_name\n'
+      '$kConstName SIR $kYear\n'
+      'పేరు: $_name\n'
       '${rel}'
-      'Village: $_village\n'
-      'House  : $_house\n'
-      'Age    : $_age  |  ${_male ? "Male" : "Female"}\n'
-      'Part: $_part  |  Page: $_page  |  Serial: $_serial\n'
+      'గ్రామం: $_village\n'
+      'ఇల్లు: $_house | వయసు: $_age | ${_male ? "పురుషుడు" : "స్త్రీ"}\n'
+      'భాగం: $_part | పుట: $_page | వరుస: $_serial\n'
       '${epic}');
   }
 }
 
-// ── Detail Bottom Sheet ───────────────────────────────────────
+// ── Detail Sheet ──────────────────────────────────────────────
 class _DetailSheet extends StatelessWidget {
   final Map<String, dynamic> data;
   const _DetailSheet({required this.data});
 
-  bool   get _male    => (data['gender'] as String? ?? '') != 'స్త్రీ';
+  bool   get _male => (data['gender'] as String? ?? '') != 'స్త్రీ';
   String get _name {
     final t = (data['name'] as String? ?? '').trim();
     return t.isNotEmpty ? t : capitalize(data['name_key'] as String? ?? '');
@@ -805,7 +804,7 @@ class _DetailSheet extends StatelessWidget {
     final t = (data['rel_name'] as String? ?? '').trim();
     return t.isNotEmpty ? t : capitalize(data['rel_key'] as String? ?? '');
   }
-  String get _rel     => data['rel'] as String? ?? '';
+  String get _rel     => (data['rel'] as String? ?? '').trim();
   String get _village => (data['village_name'] as String? ?? '').trim();
   String get _house {
     final h = (data['house'] as String? ?? '').trim();
@@ -825,12 +824,10 @@ class _DetailSheet extends StatelessWidget {
       decoration: const BoxDecoration(color: Colors.white,
         borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       child: Column(mainAxisSize: MainAxisSize.min, children: [
-        // Handle
         Container(margin: const EdgeInsets.symmetric(vertical: 10),
           width: 36, height: 4,
           decoration: BoxDecoration(color: Colors.grey[300],
             borderRadius: BorderRadius.circular(2))),
-        // Header
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
           child: Row(children: [
@@ -844,41 +841,36 @@ class _DetailSheet extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(_name.isEmpty ? '-' : _name,
                 style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
-              Text('భాగం $_part · వరుస సంఖ్య $_serial',
-                style: TextStyle(fontSize: 12, color: Colors.grey[500])),
+              Text('భాగం $_part | పుట $_page | వరుస $_serial',
+                style: TextStyle(fontSize: 11, color: Colors.grey[500])),
             ])),
-            // Copy button
-            GestureDetector(
-              onTap: _copy,
+            GestureDetector(onTap: _copy,
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: kBg, borderRadius: BorderRadius.circular(8),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(color: kBg,
+                  borderRadius: BorderRadius.circular(8),
                   border: Border.all(color: kBorder)),
-                child: Row(children: [
-                  const Icon(Icons.copy_outlined, size: 14, color: kBlue),
-                  const SizedBox(width: 4),
-                  const Text('కాపీ', style: TextStyle(fontSize: 12, color: kBlue)),
+                child: const Row(children: [
+                  Icon(Icons.copy_outlined, size: 14, color: kBlue),
+                  SizedBox(width: 4),
+                  Text('కాపీ', style: TextStyle(fontSize: 12, color: kBlue)),
                 ]))),
             const SizedBox(width: 8),
-            // Share button
-            GestureDetector(
-              onTap: _share,
+            GestureDetector(onTap: _share,
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 decoration: BoxDecoration(
                   color: kGreen.withOpacity(0.08),
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(color: kGreen.withOpacity(0.2))),
-                child: Row(children: [
-                  const Icon(Icons.send_rounded, size: 14, color: kGreen),
-                  const SizedBox(width: 4),
-                  const Text('పంపు', style: TextStyle(fontSize: 12, color: kGreen)),
+                child: const Row(children: [
+                  Icon(Icons.send_rounded, size: 14, color: kGreen),
+                  SizedBox(width: 4),
+                  Text('పంపు', style: TextStyle(fontSize: 12, color: kGreen)),
                 ]))),
           ]),
         ),
         const Divider(height: 1),
-        // Details
         Padding(
           padding: EdgeInsets.fromLTRB(16, 12, 16,
             MediaQuery.of(context).padding.bottom + 16),
@@ -886,15 +878,15 @@ class _DetailSheet extends StatelessWidget {
             _row('గ్రామం', 'Village', _village.isNotEmpty ? _village : '-'),
             _row('ఇంటి నంబరు', 'House No', _house),
             if (_relName.isNotEmpty)
-              _row('${relFull(_rel)}', relEn(_rel), _relName),
+              _row(relLabel(_rel), relLabelEn(_rel), _relName),
             _row('లింగం', 'Gender', _male ? 'పురుషుడు / M' : 'స్త్రీ / F'),
-            _row('వయసు', 'Age (${kYear})', _age),
+            _row('వయసు', 'Age ($kYear)', _age),
             _row('ఓటరు కార్డు', 'EPIC',
-              _epic.isNotEmpty && _epic != '00000000000000'
-                ? _epic : 'జారీ కాలేదు / Not issued (2002)'),
+              (_epic.isNotEmpty && _epic != '00000000000000')
+                ? _epic : 'జారీ కాలేదు / Not issued'),
             _row('పుట', 'Page', _page),
             _row('భాగం', 'Part', _part),
-            _row('వరుస సంఖ్య', 'Serial', _serial),
+            _row('వరుస సంఖ్య', 'Serial No', _serial),
           ]),
         ),
       ]),
@@ -904,10 +896,10 @@ class _DetailSheet extends StatelessWidget {
   Widget _row(String tel, String en, String val) => Padding(
     padding: const EdgeInsets.only(bottom: 10),
     child: Row(children: [
-      SizedBox(width: 120, child: Column(
+      SizedBox(width: 130, child: Column(
         crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text(tel, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
-        Text(en,  style: TextStyle(fontSize: 10, color: Colors.grey[500])),
+        Text(en, style: TextStyle(fontSize: 10, color: Colors.grey[500])),
       ])),
       Expanded(child: Text(val,
         style: const TextStyle(fontSize: 13),
@@ -915,24 +907,21 @@ class _DetailSheet extends StatelessWidget {
     ]));
 
   void _copy() {
-    final text =
+    Clipboard.setData(ClipboardData(text:
       '$_name | గ్రామం: $_village | ఇల్లు: $_house | వయసు: $_age | '
-      'భాగం: $_part | పుట: $_page | వరుస: $_serial | EPIC: $_epic';
-    Clipboard.setData(ClipboardData(text: text));
+      'భాగం: $_part | పుట: $_page | వరుస: $_serial | EPIC: $_epic'));
   }
 
   void _share() {
-    final rel  = _relName.isNotEmpty ? '${relEn(_rel)}: $_relName\n' : '';
-    final epic = _hasEpic ? 'EPIC   : $_epic\n' : '';
+    final rel  = _relName.isNotEmpty ? '${relLabelEn(_rel)}: $_relName\n' : '';
+    final epic = _hasEpic ? 'EPIC: $_epic\n' : '';
     Share.share(
-      '$kConstName Voter List (SIR $kYear)\n'
-      '━━━━━━━━━━━━━━━━━━━━━━\n'
-      'Name   : $_name\n'
+      '$kConstName SIR $kYear\n'
+      'పేరు: $_name\n'
       '${rel}'
-      'Village: $_village\n'
-      'House  : $_house\n'
-      'Age    : $_age  |  ${_male ? "Male" : "Female"}\n'
-      'Part: $_part  |  Page: $_page  |  Serial: $_serial\n'
+      'గ్రామం: $_village\n'
+      'ఇల్లు: $_house | వయసు: $_age | ${_male ? "పురుషుడు" : "స్త్రీ"}\n'
+      'భాగం: $_part | పుట: $_page | వరుస: $_serial\n'
       '${epic}');
   }
 }
@@ -982,7 +971,7 @@ class _PartsSheetState extends State<_PartsSheet> {
                 v == true ? _sel.add(num) : _sel.remove(num)),
               title: Text('భాగం $num',
                 style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 14)),
-              subtitle: Text('$vil · $tot ఓటర్లు',
+              subtitle: Text('$vil | $tot ఓటర్లు',
                 style: TextStyle(color: Colors.grey[600], fontSize: 11)),
               activeColor: kBlue, dense: true);
           })),
