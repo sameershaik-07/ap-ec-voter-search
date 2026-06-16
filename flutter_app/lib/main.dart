@@ -93,7 +93,8 @@ class VoterDB {
     if (q.isEmpty) return [];
     if (RegExp(r'^[A-Za-z]{2}\d+$').hasMatch(q) || q.length >= 10)
       return _searchEpic(q);
-    if (RegExp(r'^[\d\-/]+$').hasMatch(q))
+    // AFTER — allows letters mixed in (3/53C, 3-53C, 2-75A, 3-18B etc.)
+    if (RegExp(r'^\d[A-Za-z\d\-/]*$').hasMatch(q))
       return _searchHouse(q, parts: parts, village: village);
     return _searchName(q, parts: parts, village: village);
   }
