@@ -60,6 +60,13 @@ String relLabelEn(String rel) {
 bool isValidEpic(String e) =>
     e.isNotEmpty && e != '00000000000000';
 
+// English transliteration helper — uses the pre-built phonetic key
+// (name_key / rel_key) already stored in the DB, title-cased for display.
+String englishOf(String key) {
+  final c = capitalize(key.trim());
+  return c;
+}
+
 // ── Database ──────────────────────────────────────────────────
 class VoterDB {
   static Database? _db;
@@ -669,6 +676,17 @@ class _VoterCard extends StatelessWidget {
     final t = (data['rel_name'] as String? ?? '').trim();
     return t.isNotEmpty ? t : capitalize(data['rel_key'] as String? ?? '');
   }
+  // English transliteration of the voter's name (from name_key), shown
+  // alongside the Telugu name. Empty when no key is available or it
+  // would just duplicate an already-English name.
+  String get _nameEn {
+    final en = englishOf(data['name_key'] as String? ?? '');
+    return (en.isEmpty || en.toLowerCase() == _name.toLowerCase()) ? '' : en;
+  }
+  String get _relNameEn {
+    final en = englishOf(data['rel_key'] as String? ?? '');
+    return (en.isEmpty || en.toLowerCase() == _relName.toLowerCase()) ? '' : en;
+  }
   String get _rel     => (data['rel'] as String? ?? '').trim();
   String get _house {
     final h = (data['house'] as String? ?? '').trim();
@@ -726,10 +744,15 @@ class _VoterCard extends StatelessWidget {
                   child: Text(_male ? 'పు' : 'స్త్రీ',
                     style: TextStyle(fontSize: 10, color: gc, fontWeight: FontWeight.w500))),
               ]),
+              if (_nameEn.isNotEmpty)
+                Text(_nameEn,
+                  style: TextStyle(fontSize: 11, color: Colors.grey[500])),
               // FIX: Show relation label properly in Telugu
               if (_relName.isNotEmpty) ...[
                 const SizedBox(height: 2),
-                Text('${relLabel(_rel)}: $_relName',
+                Text(_relNameEn.isNotEmpty
+                    ? '${relLabel(_rel)}: $_relName ($_relNameEn)'
+                    : '${relLabel(_rel)}: $_relName',
                   style: TextStyle(fontSize: 11, color: Colors.grey[600])),
               ],
               const SizedBox(height: 5),
@@ -805,6 +828,14 @@ class _DetailSheet extends StatelessWidget {
     final t = (data['rel_name'] as String? ?? '').trim();
     return t.isNotEmpty ? t : capitalize(data['rel_key'] as String? ?? '');
   }
+  String get _nameEn {
+    final en = englishOf(data['name_key'] as String? ?? '');
+    return (en.isEmpty || en.toLowerCase() == _name.toLowerCase()) ? '' : en;
+  }
+  String get _relNameEn {
+    final en = englishOf(data['rel_key'] as String? ?? '');
+    return (en.isEmpty || en.toLowerCase() == _relName.toLowerCase()) ? '' : en;
+  }
   String get _rel     => (data['rel'] as String? ?? '').trim();
   String get _village => (data['village_name'] as String? ?? '').trim();
   String get _house {
@@ -842,6 +873,9 @@ class _DetailSheet extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(_name.isEmpty ? '-' : _name,
                 style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+              if (_nameEn.isNotEmpty)
+                Text(_nameEn,
+                  style: TextStyle(fontSize: 12, color: Colors.grey[600])),
               Text('భాగం $_part | పుట $_page | వరుస $_serial',
                 style: TextStyle(fontSize: 11, color: Colors.grey[500])),
             ])),
@@ -879,7 +913,8 @@ class _DetailSheet extends StatelessWidget {
             _row('గ్రామం', 'Village', _village.isNotEmpty ? _village : '-'),
             _row('ఇంటి నంబరు', 'House No', _house),
             if (_relName.isNotEmpty)
-              _row(relLabel(_rel), relLabelEn(_rel), _relName),
+              _row(relLabel(_rel), relLabelEn(_rel),
+                _relNameEn.isNotEmpty ? '$_relName ($_relNameEn)' : _relName),
             _row('లింగం', 'Gender', _male ? 'పురుషుడు / M' : 'స్త్రీ / F'),
             _row('వయసు', 'Age ($kYear)', _age),
             _row('ఓటరు కార్డు', 'EPIC',
