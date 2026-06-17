@@ -94,7 +94,7 @@ class VoterDB {
     if (RegExp(r'^[A-Za-z]{2}\d+$').hasMatch(q) || q.length >= 10)
       return _searchEpic(q);
     // AFTER — allows letters mixed in (3/53C, 3-53C, 2-75A, 3-18B etc.)
-    if (RegExp(r'^\d[A-Za-z\d\-/]*$').hasMatch(q))
+    if (RegExp(r'^\d').hasMatch(q))
       return _searchHouse(q, parts: parts, village: village);
     return _searchName(q, parts: parts, village: village);
   }
@@ -121,7 +121,7 @@ class VoterDB {
   static Future<List<Map<String, dynamic>>> _searchHouse(
       String q, {List<int>? parts, String? village}) async {
     final d    = await db;
-    final norm = '%-${q.replaceAll('/', '-').toLowerCase()}-%';
+    final norm = '%-${q.replaceAll(RegExp(r'[^a-zA-Z0-9\-]'), '').toLowerCase()}-%';
     String where = 'WHERE v.house_norm LIKE ?';
     List<Object?> args = [norm];
     if (village != null && village.isNotEmpty) {
