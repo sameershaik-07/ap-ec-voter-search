@@ -1,0 +1,42 @@
+﻿# Databases (too large)
+*.db
+output/*.db
+flutter_app/assets/voters.db
+
+# APK outputs
+*.apk
+output/*.apk
+
+# PDFs (source files, too large)
+pdfs/
+pdfs_dhone_full/
+output/
+
+# Test scripts (temp)
+test_accuracy.py
+test_defaults.py
+test_simple.py
+test_scripts/
+fix_db.py
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Flutter build
+flutter_app/build/
+flutter_app/.dart_tool/
+flutter_app/.flutter-plugins
+flutter_app/.flutter-plugins-dependencies
+flutter_app/pubspec.lock
+
+# Reference files (from APK - not our code)
+reference.db
+reference.zip
+ref_extract/
+voter_names_lookup.json
+pipeline/voter_names_lookup.json
+
+# Windows
+Thumbs.db
+desktop.ini
